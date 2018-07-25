@@ -2,20 +2,21 @@ import io
 import numpy as np
 import re
 import requests
+from image_classification import predict
 from PIL import Image
-from recaptcha_exceptions import RecaptchaNotFoundException, ElementNotFoundException, AccessDeniedException
+from recaptcha_exceptions import AccessDeniedException, ElementNotFoundException, RecaptchaNotFoundException
 from selenium import webdriver
 from selenium.common.exceptions import NoSuchElementException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
-from time import time, sleep
+from time import sleep, time
 
 recaptcha_url = 'https://www.google.com/recaptcha/api2/anchor'
 
-RECAPTCHA_RE = ['Select all images with.*\n(.+)',
+RECAPTCHA_RE = ['Select all images with.*\n(.+)\nClick verify once there are none left',
                 'Select all images with.*\n(.+?) or (.+)',
-                'Select all images with.*\n(.+)\nClick verify once there are none left',
+                'Select all images with.*\n(.+)',
                 'Select all squares with\n(.+)\nIf there are none, click skip']
 
 class RecaptchaSolver:
@@ -128,14 +129,20 @@ class RecaptchaSolver:
             cols: Number of columns to split image into
 
         Returns:
-            An array containing the split images as numpy arrays in row major order
+            An array where each element is a row array of images.
+            Each row contains an equal number of images as numpy arrays 
         """ 
-        split_images = []
-        for row in np.split(images, rows, axis=1): # Split into rows
-            for col in np.split(row, cols, axis=2): # Split rows into columns
-                split_images.append(col)
-        return split_images
+        return [np.split(row, cols, axis=1) for row in np.split(images, rows, axis=0)]
+    
+    def solve_static_images_challenge_1(self, images, labels):
+        print(predict(images, labels))
 
+    def solve_static_images_challenge_2(self, images, labels):
+        print(predict(images, labels))
+    
+    def solve_dynamic_images_challenge(self, images, labels):
+        print(predict(images, labels))   
+    
     def solve_recaptcha(self):
         """
         Solves recaptcha
@@ -157,26 +164,55 @@ class RecaptchaSolver:
         for i in range(1):
             if task:
                 WebDriverWait(self.driver, 10).until(EC.staleness_of(task))
-            task = {By.CLASS_NAME: ['rc-imageselect-desc-no-canonical', 'rc-imageselect-desc']}
-            # Recaptcha challenge to solve
-            task = self.find_recaptcha_element(task).text
-            print(task, '======================================', sep='\n')
             
             recaptcha = {By.TAG_NAME: ['img']}
             img = self.find_recaptcha_element(recaptcha)
             url = img.get_attribute('src')
             
+            # Download recaptcha images to memory
             data = requests.get(url).content
-            recaptcha_images = Image.open(io.BytesIO(data))   
-            arr = np.array(recaptcha_images)
+            recaptcha_images = Image.open(io.BytesIO(data))  
 
             # Last 2 characters of class tag are dimensions of where to split images
             dim = img.get_attribute('class')[-2:] 
             rows = int(dim[0])
             cols = int(dim[1])
 
-            # imgs = self.split_images(recaptcha_images)
+            # Resize image
+            recaptcha_images = recaptcha_images.resize((331*cols, 331*rows), Image.ANTIALIAS)
+            # Convert image to numpy array
+            images_arr = np.array(recaptcha_images)          
+            imgs = self.split_images(images_arr, rows, cols)
+            
+            # Save images as jpgs
+            for j in range(rows): 
+                for k in range(cols):
+                    im = Image.fromarray(imgs[j][k])
+                    im.save(str(j) + str(k) + ".jpeg")
 
+            task = {By.CLASS_NAME: ['rc-imageselect-desc-no-canonical', 'rc-imageselect-desc']}
+            # Recaptcha challenge to solve
+            task = self.find_recaptcha_element(task).text
+            print(task, '======================================', sep='\n')
+
+            task_type = -1
+            labels = None # Class labels to find for recaptcha challenge
+            for i in range(len(RECAPTCHA_RE)):
+                recaptcha_re = re.search(RECAPTCHA_RE[i], task)
+                if recaptcha_re:
+                    task_type = i
+                    labels = recaptcha_re.groups()
+            
+            if task_type == 0:
+                self.solve_dynamic_images_challenge(imgs, labels)
+            elif task_type == 1:
+                self.solve_static_images_challenge_2(imgs, labels)
+            elif task_type == 2 or task_type == 3:
+                self.solve_static_images_challenge_1(imgs, labels)
+            else:
+                print('Unable to recognize challenge')
+                return
+                
             #task = {By.XPATH: ['//*[@id="recaptcha-reload-button"]']}
             #task = self.find_recaptcha_element(task)
             #task.click()
