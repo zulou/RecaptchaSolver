@@ -13,7 +13,7 @@ img_mapping = {'cars': {'sports_car', 'passenger_car', 'convertible', 'minivan',
 
 NASNet = NASNetLarge(include_top=True, weights='models/NASNet-large.h5', classes=1000)
 
-def predict(images, labels):
+def predict(images, labels, threshold):
     num_rows = len(images)
     num_cols = len(images[0]) 
     predictions = []
@@ -33,6 +33,6 @@ def predict(images, labels):
 
             for label in labels:
                 for pred in y_pred:
-                    if pred[1] in img_mapping[label]:
+                    if pred[1] in img_mapping[label] and pred[2] > threshold:
                         predictions.append((row, col))
     return predictions

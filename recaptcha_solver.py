@@ -134,14 +134,41 @@ class RecaptchaSolver:
         """ 
         return [np.split(row, cols, axis=1) for row in np.split(images, rows, axis=0)]
     
+    def click_tiles(self, predictions, rows, cols):
+        for pred in predictions:
+            index = pred[0] * cols + pred[1]
+            self.driver.find_elements_by_tag_name('td')[index].click()
+    
+    def solve_challenge(self, images, task):
+        task_type = -1
+        labels = None # Class labels to find for recaptcha challenge
+        for i in range(len(RECAPTCHA_RE)):
+            recaptcha_re = re.search(RECAPTCHA_RE[i], task)
+            if recaptcha_re:
+                task_type = i
+                labels = recaptcha_re.groups()
+        
+        if task_type == 0:
+            self.solve_dynamic_images_challenge(images, labels)
+        elif task_type == 1:
+            self.solve_static_images_challenge_2(images, labels)
+        elif task_type == 2 or task_type == 3:
+            self.solve_static_images_challenge_1(images, labels)
+        else:
+            print('Unable to recognize challenge')
+            return
+    
     def solve_static_images_challenge_1(self, images, labels):
-        print(predict(images, labels))
+        predictions = predict(images, labels, 0.05)
+        self.click_tiles(predictions, len(images), len(images[0]))
 
     def solve_static_images_challenge_2(self, images, labels):
-        print(predict(images, labels))
+        predictions = predict(images, labels, 0.05)
+        self.click_tiles(predictions, len(images), len(images[0]))
     
     def solve_dynamic_images_challenge(self, images, labels):
-        print(predict(images, labels))   
+        predictions = predict(images, labels, 0.05)
+        self.click_tiles(predictions, len(images), len(images[0]))
     
     def solve_recaptcha(self):
         """
@@ -161,7 +188,8 @@ class RecaptchaSolver:
             pass
 
         task = None
-        for i in range(1):
+        done = False
+        while not done:
             if task:
                 WebDriverWait(self.driver, 10).until(EC.staleness_of(task))
             
@@ -184,42 +212,35 @@ class RecaptchaSolver:
             images_arr = np.array(recaptcha_images)          
             imgs = self.split_images(images_arr, rows, cols)
             
+            """
             # Save images as jpgs
             for j in range(rows): 
                 for k in range(cols):
                     im = Image.fromarray(imgs[j][k])
                     im.save(str(j) + str(k) + ".jpeg")
+            """
 
             task = {By.CLASS_NAME: ['rc-imageselect-desc-no-canonical', 'rc-imageselect-desc']}
             # Recaptcha challenge to solve
             task = self.find_recaptcha_element(task).text
             print(task, '======================================', sep='\n')
 
-            task_type = -1
-            labels = None # Class labels to find for recaptcha challenge
-            for i in range(len(RECAPTCHA_RE)):
-                recaptcha_re = re.search(RECAPTCHA_RE[i], task)
-                if recaptcha_re:
-                    task_type = i
-                    labels = recaptcha_re.groups()
-            
-            if task_type == 0:
-                self.solve_dynamic_images_challenge(imgs, labels)
-            elif task_type == 1:
-                self.solve_static_images_challenge_2(imgs, labels)
-            elif task_type == 2 or task_type == 3:
-                self.solve_static_images_challenge_1(imgs, labels)
-            else:
-                print('Unable to recognize challenge')
-                return
-                
+            self.solve_challenge(imgs, task)
+
             #task = {By.XPATH: ['//*[@id="recaptcha-reload-button"]']}
             #task = self.find_recaptcha_element(task)
             #task.click()
 
-            #task = {By.ID: ['recaptcha-verify-button']}
-            #task = self.find_recaptcha_element(task)
-            # print(task.get_attribute("src"))
+            sleep(5)
+
+            verify = {By.ID: ['recaptcha-verify-button']}
+            verify = self.find_recaptcha_element(verify)
+            verify.click()
+
+            self.switch_to_parent_iframe()
+            sleep(2)
+            status = self.driver.find_element_by_xpath('//*[@id="recaptcha-anchor"]').get_attribute('aria-checked')
+            done = True if status == 'true' else False
 
 rs = RecaptchaSolver('https://weeband.weebly.com')
 rs.connect()
