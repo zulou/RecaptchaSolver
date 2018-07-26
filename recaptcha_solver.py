@@ -12,7 +12,9 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 from time import sleep, time
 
-recaptcha_url = 'https://www.google.com/recaptcha/api2/anchor'
+IMAGE_SIZE = 331 # NASNet requires 331x331 images
+
+RECAPTCHA_URL = 'https://www.google.com/recaptcha/api2/anchor'
 
 RECAPTCHA_RE = ['Select all images with.*\n(.+)\nClick verify once there are none left',
                 'Select all images with.*\n(.+?) or (.+)',
@@ -47,7 +49,7 @@ class RecaptchaSolver:
             for iframe in curr_iframes:
                 src = iframe.get_attribute('src')
                 # If recaptcha url is found, return
-                if recaptcha_url in src:
+                if RECAPTCHA_URL in src:
                     return
                 # If "recaptcha" is in the url, switch iframe and continue from there
                 if 'recaptcha' in src:
@@ -69,7 +71,7 @@ class RecaptchaSolver:
         while True:
             curr_iframes = self.driver.find_elements_by_tag_name('iframe')
             for iframe in curr_iframes:
-                if recaptcha_url in iframe.get_attribute('src'):
+                if RECAPTCHA_URL in iframe.get_attribute('src'):
                     self.driver.switch_to.frame(iframe)
                     try:
                         self.driver.find_element_by_class_name('recaptcha-checkbox-checkmark')
@@ -87,17 +89,19 @@ class RecaptchaSolver:
         recaptcha_box = self.driver.find_element_by_class_name('recaptcha-checkbox-checkmark')
         recaptcha_box.click()
 
-    def find_recaptcha_element(self, elements_dict, timeout=10):
+    def find_recaptcha_element(self, elements_dict, all_elements=False, timeout=10):
         """
-        Finds and returns the first WebElement object that matches an element from elements
+        Returns the first match to an element in elements_dict as a WebElement object.
+        If all_elements is true, a list of all elements found by the first match is returned.
 
         Args:
             elements_dict: A dictionary where the keys are Selenium By objects and the 
                            values are lists of elements to find using the corresponding By object            
             timeout: The amount of time to search for element until an exception is thrown
+            all_elements: Whether or not to find all objects that match an element
 
         Returns:
-            The WebElement object that matches the class name
+            The WebElement object or a list of WebElement objects that match an element name
 
         Raises:
             ElementNotFoundException: If any element is not found within the specified time
@@ -112,13 +116,46 @@ class RecaptchaSolver:
                         # Recaptcha iframe that contains its information
                         recaptcha = self.driver.find_element_by_css_selector('iframe[title="recaptcha challenge"]')
                         self.driver.switch_to.frame(recaptcha)
-                        ele = self.driver.find_element(by, name)
-                        return ele
+                        return self.driver.find_elements(by, name) if all_elements else self.driver.find_element(by, name) 
                     except NoSuchElementException:
                         # Try next element
                         continue       
         raise ElementNotFoundException('Unable to find elements: Timed out after ' + str(timeout) + ' seconds.')
 
+    def download_images(self, width, height, index, split):
+            recaptcha = {By.TAG_NAME: ['img']}
+            img = self.find_recaptcha_element(recaptcha, all_elements=True)[index]
+            url = img.get_attribute('src')
+            
+            # Download recaptcha images to memory
+            data = requests.get(url).content
+            recaptcha_images = Image.open(io.BytesIO(data))  
+
+            rows = 1
+            cols = 1
+            
+            if split:
+                # Last 2 characters of class tag are dimensions of where to split images
+                dim = img.get_attribute('class')[-2:] 
+                rows = int(dim[0])
+                cols = int(dim[1])
+
+            # Resize image
+            recaptcha_images = recaptcha_images.resize((width * cols, height * rows), Image.ANTIALIAS)
+            # Convert image to numpy array
+            images_arr = np.array(recaptcha_images)          
+            if split:
+                imgs = self.split_images(images_arr, rows, cols)
+
+            """
+            # Save images as jpgs
+            for j in range(rows): 
+                for k in range(cols):
+                    im = Image.fromarray(imgs[j][k])
+                    im.save(str(j) + str(k) + ".jpeg")
+            """
+            return imgs
+    
     def split_images(self, images, rows, cols):
         """
         Splits images into a number of equal parts specified by the parameter values
@@ -134,10 +171,11 @@ class RecaptchaSolver:
         """ 
         return [np.split(row, cols, axis=1) for row in np.split(images, rows, axis=0)]
     
-    def click_tiles(self, predictions, rows, cols):
+    def click_tiles(self, predictions, cols):
         for pred in predictions:
             index = pred[0] * cols + pred[1]
             self.driver.find_elements_by_tag_name('td')[index].click()
+            sleep(0.5)
     
     def solve_challenge(self, images, task):
         task_type = -1
@@ -147,28 +185,22 @@ class RecaptchaSolver:
             if recaptcha_re:
                 task_type = i
                 labels = recaptcha_re.groups()
-        
+               
         if task_type == 0:
             self.solve_dynamic_images_challenge(images, labels)
-        elif task_type == 1:
-            self.solve_static_images_challenge_2(images, labels)
-        elif task_type == 2 or task_type == 3:
-            self.solve_static_images_challenge_1(images, labels)
+        elif task_type == 1 or task_type == 2 or task_type == 3:
+            self.solve_static_images_challenge(images, labels)
         else:
             print('Unable to recognize challenge')
             return
     
-    def solve_static_images_challenge_1(self, images, labels):
+    def solve_static_images_challenge(self, images, labels):
         predictions = predict(images, labels, 0.05)
-        self.click_tiles(predictions, len(images), len(images[0]))
-
-    def solve_static_images_challenge_2(self, images, labels):
-        predictions = predict(images, labels, 0.05)
-        self.click_tiles(predictions, len(images), len(images[0]))
+        print(predictions)
+        self.click_tiles(predictions, len(images[0]))
     
     def solve_dynamic_images_challenge(self, images, labels):
-        predictions = predict(images, labels, 0.05)
-        self.click_tiles(predictions, len(images), len(images[0]))
+        pass
     
     def solve_recaptcha(self):
         """
@@ -187,38 +219,14 @@ class RecaptchaSolver:
             # Message not found. Proceed to solving recaptcha
             pass
 
-        task = None
+        img = None
         done = False
         while not done:
-            if task:
-                WebDriverWait(self.driver, 10).until(EC.staleness_of(task))
+            #sleep(2)
+            #if img:
+                #WebDriverWait(self.driver, 10).until(EC.staleness_of(img))
             
-            recaptcha = {By.TAG_NAME: ['img']}
-            img = self.find_recaptcha_element(recaptcha)
-            url = img.get_attribute('src')
-            
-            # Download recaptcha images to memory
-            data = requests.get(url).content
-            recaptcha_images = Image.open(io.BytesIO(data))  
-
-            # Last 2 characters of class tag are dimensions of where to split images
-            dim = img.get_attribute('class')[-2:] 
-            rows = int(dim[0])
-            cols = int(dim[1])
-
-            # Resize image
-            recaptcha_images = recaptcha_images.resize((331*cols, 331*rows), Image.ANTIALIAS)
-            # Convert image to numpy array
-            images_arr = np.array(recaptcha_images)          
-            imgs = self.split_images(images_arr, rows, cols)
-            
-            """
-            # Save images as jpgs
-            for j in range(rows): 
-                for k in range(cols):
-                    im = Image.fromarray(imgs[j][k])
-                    im.save(str(j) + str(k) + ".jpeg")
-            """
+            imgs = self.download_images(IMAGE_SIZE, IMAGE_SIZE, 0, True)
 
             task = {By.CLASS_NAME: ['rc-imageselect-desc-no-canonical', 'rc-imageselect-desc']}
             # Recaptcha challenge to solve
@@ -231,15 +239,16 @@ class RecaptchaSolver:
             #task = self.find_recaptcha_element(task)
             #task.click()
 
-            sleep(5)
+            #sleep(5)
 
             verify = {By.ID: ['recaptcha-verify-button']}
             verify = self.find_recaptcha_element(verify)
             verify.click()
 
-            self.switch_to_parent_iframe()
             sleep(2)
+            self.switch_to_recaptcha_iframe()
             status = self.driver.find_element_by_xpath('//*[@id="recaptcha-anchor"]').get_attribute('aria-checked')
+            print(status)
             done = True if status == 'true' else False
 
 rs = RecaptchaSolver('https://weeband.weebly.com')

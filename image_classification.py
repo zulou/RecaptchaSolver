@@ -8,7 +8,7 @@ img_mapping = {'cars': {'sports_car', 'passenger_car', 'convertible', 'minivan',
                                'grocery_store', 'cinema', 'library', 'barbershop'},
                'street signs': {'street_sign'},
                'bus': {'trailer_truck', 'tow_truck', 'moving_van', 'school_bus', 'trolleybus', 'recreational_vehicle'},
-               'roads': {},
+               'roads': {'worm_fence'},
                'traffic lights': {'traffic_light'}}
 
 NASNet = NASNetLarge(include_top=True, weights='models/NASNet-large.h5', classes=1000)
@@ -35,4 +35,5 @@ def predict(images, labels, threshold):
                 for pred in y_pred:
                     if pred[1] in img_mapping[label] and pred[2] > threshold:
                         predictions.append((row, col))
+                        break
     return predictions
