@@ -3,11 +3,11 @@ from keras.applications.nasnet import NASNetLarge, decode_predictions, preproces
 from keras.preprocessing import image
 
 img_mapping = {'cars': {'sports_car', 'passenger_car', 'convertible', 'minivan', 'limousine', 
-                        'moving_van', 'car_mirror', 'police_van', 'ambulance'},
+                        'moving_van', 'police_van', 'ambulance'},
                'store front': {'tobacco_shop', 'toyshop', 'bakery', 'restaurant', 
-                               'grocery_store', 'cinema', 'library', 'barbershop'},
-               'street signs': {'street_sign'},
-               'bus': {'trailer_truck', 'tow_truck', 'moving_van', 'school_bus', 'trolleybus', 'recreational_vehicle'},
+                               'grocery_store', 'barbershop'},
+               'street signs': {'street_sign', 'scoreboard'},
+               'bus': {'school_bus', 'trolleybus', 'minibus'},
                'roads': {'worm_fence'},
                'traffic lights': {'traffic_light'}}
 
@@ -26,14 +26,17 @@ def predict(images, labels, threshold):
             y_prob = NASNet.predict(img_data)
             y_pred = decode_predictions(y_prob, top=5)[0]
             
+            """
             print(str(row) + str(col), end=' ')
             for pred in y_pred:
                 print(pred[1] + ': ' + str(pred[2]), end=', ')
             print('\n')
+            """
 
             for label in labels:
                 for pred in y_pred:
                     if pred[1] in img_mapping[label] and pred[2] > threshold:
+                        print(pred[1])
                         predictions.append((row, col))
                         break
     return predictions

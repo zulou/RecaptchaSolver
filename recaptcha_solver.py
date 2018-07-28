@@ -122,7 +122,7 @@ class RecaptchaSolver:
                         continue       
         raise ElementNotFoundException('Unable to find elements: Timed out after ' + str(timeout) + ' seconds.')
 
-    def download_images(self, width, height, index, split):
+    def download_images(self, index, split, width=IMAGE_SIZE, height=IMAGE_SIZE):
             recaptcha = {By.TAG_NAME: ['img']}
             img = self.find_recaptcha_element(recaptcha, all_elements=True)[index]
             url = img.get_attribute('src')
@@ -144,8 +144,7 @@ class RecaptchaSolver:
             recaptcha_images = recaptcha_images.resize((width * cols, height * rows), Image.ANTIALIAS)
             # Convert image to numpy array
             images_arr = np.array(recaptcha_images)          
-            if split:
-                imgs = self.split_images(images_arr, rows, cols)
+            imgs = self.split_images(images_arr, rows, cols)
 
             """
             # Save images as jpgs
@@ -185,6 +184,7 @@ class RecaptchaSolver:
             if recaptcha_re:
                 task_type = i
                 labels = recaptcha_re.groups()
+                break
                
         if task_type == 0:
             self.solve_dynamic_images_challenge(images, labels)
@@ -195,12 +195,27 @@ class RecaptchaSolver:
             return
     
     def solve_static_images_challenge(self, images, labels):
-        predictions = predict(images, labels, 0.05)
-        print(predictions)
+        predictions = predict(images, labels, 0.02)
         self.click_tiles(predictions, len(images[0]))
     
     def solve_dynamic_images_challenge(self, images, labels):
-        pass
+        predictions = predict(images, labels, 0.02)
+        if predictions:
+            self.click_tiles(predictions, len(images[0]))
+
+        # While predictions is not empty
+        while predictions:
+            sleep(5)
+            new_predictions = []
+            for pred in predictions:
+                index = pred[0] * len(images[0]) + pred[1]
+                new_img = self.download_images(index, False)
+                new_prediction = predict(new_img, labels, 0.02)
+                if new_prediction:
+                    new_prediction = [(pred[0], pred[1])]
+                    self.click_tiles(new_prediction, len(images[0]))
+                    new_predictions.append(new_prediction[0])
+            predictions = new_predictions                
     
     def solve_recaptcha(self):
         """
@@ -219,14 +234,14 @@ class RecaptchaSolver:
             # Message not found. Proceed to solving recaptcha
             pass
 
-        img = None
+        time_in = time()
         done = False
         while not done:
             #sleep(2)
             #if img:
                 #WebDriverWait(self.driver, 10).until(EC.staleness_of(img))
             
-            imgs = self.download_images(IMAGE_SIZE, IMAGE_SIZE, 0, True)
+            imgs = self.download_images(0, True)
 
             task = {By.CLASS_NAME: ['rc-imageselect-desc-no-canonical', 'rc-imageselect-desc']}
             # Recaptcha challenge to solve
@@ -248,8 +263,8 @@ class RecaptchaSolver:
             sleep(2)
             self.switch_to_recaptcha_iframe()
             status = self.driver.find_element_by_xpath('//*[@id="recaptcha-anchor"]').get_attribute('aria-checked')
-            print(status)
             done = True if status == 'true' else False
+        print(time() - time_in)
 
 rs = RecaptchaSolver('https://weeband.weebly.com')
 rs.connect()
