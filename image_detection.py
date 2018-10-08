@@ -17,12 +17,12 @@ PATH_TO_FROZEN_GRAPH = OBJECT_DETECTION_PATH + '/' + MODEL_NAME + '/frozen_infer
 PATH_TO_LABELS = os.path.join(OBJECT_DETECTION_PATH, 'data', 'mscoco_label_map.pbtxt')
 
 NUM_CLASSES = 90
-PREDICTION_THRESHOLD = 0.5
+PREDICTION_THRESHOLD = 0.2
 CLASS_LABELS_MAP = {'bicycle': {'bicycles'},
                     'truck': {'cars'},
                     'car': {'cars'},
                     'motorcycle': {'motocycles'},
-                    'bus': {'bus'},
+                    'bus': {'bus', 'buses'},
                     'traffic light': {'traffic lights'},
                     'fire hydrant': {'a fire hydrant', 'fire hydrants'}}
 
@@ -37,11 +37,6 @@ with detection_graph.as_default():
     serialized_graph = fid.read()
     od_graph_def.ParseFromString(serialized_graph)
     tf.import_graph_def(od_graph_def, name='')
-
-def load_image_into_numpy_array(image):
-  (im_width, im_height) = image.size
-  return np.array(image.getdata()).reshape(
-      (im_height, im_width, 3)).astype(np.uint8)
 
 def run_inference_for_single_image(image, graph):
   with graph.as_default():
@@ -90,10 +85,10 @@ def run_inference_for_single_image(image, graph):
   return output_dict
 
 def calculate_tiles(predictions, x_min, y_min, x_max, y_max, width, height, overlap):
-    start_row = y_min // height
-    end_row = y_max // height if overlap else start_row
-    start_col = x_min // width
-    end_col = x_max // width if overlap else start_col
+    start_row = int(y_min / height) if overlap else int((y_min + y_max) / (2 * height))
+    end_row = int(y_max / height) if overlap else int((y_min + y_max) / (2 * height))
+    start_col = int(x_min / width) if overlap else int((x_min + x_max) / (2 * width))
+    end_col = int(x_max / width) if overlap else int((x_min + x_max) / (2 * width))
 
     for row in range(start_row, end_row + 1):
         for col in range(start_col, end_col + 1):   
@@ -103,8 +98,8 @@ def calculate_tiles(predictions, x_min, y_min, x_max, y_max, width, height, over
 def predict(image_arr, labels, rows, cols):
     output_dict = run_inference_for_single_image(image_arr, detection_graph)
     height, width = image_arr.shape[0], image_arr.shape[1]
-    box_width = width // cols
-    box_height = height // rows
+    box_width = width / cols
+    box_height = height / rows
     category_index = label_map_util.create_category_index(categories)
     predictions = []
     

@@ -168,6 +168,16 @@ class RecaptchaSolver:
         self.click_tiles(predictions, cols)
         return predictions == []
     
+    def download_dynamic_images(self, predictions, dims, cols):
+        height = dims[0] * len(predictions)
+        width = dims[1]
+        new_imgs = np.zeros((height, width, dims[2]))
+        for idx, pred in enumerate(predictions):
+            index = pred[0] * cols + pred[1]
+            new_img, _, _ = self.download_images(index)
+            new_imgs[idx*dims[0] : (idx+1)*dims[0]] = new_img
+        return new_imgs
+    
     def solve_dynamic_images_challenge(self, images, labels, rows, cols):
         predictions = predict(images, labels, rows, cols)
         if predictions:
@@ -177,17 +187,18 @@ class RecaptchaSolver:
 
         # While predictions is not empty
         while predictions:
-            sleep(5)
+            print(predictions)
             new_predictions = []
-            for pred in predictions:
-                print(pred)
-                index = pred[0] * cols + pred[1]
-                new_img, _, cols = self.download_images(index)
-                new_prediction = predict(new_img, labels, rows, cols)
-                if new_prediction:
-                    new_prediction = [(pred[0], pred[1])]
-                    self.click_tiles(new_prediction, cols)
-                    new_predictions.append(new_prediction[0])
+            sleep(5) # wait for new challenge to load
+            height = int(images.shape[0] / rows)
+            width = int(images.shape[1] / cols)
+            dims = (height, width, images.shape[2])
+            new_imgs = self.download_dynamic_images(predictions, dims, cols)
+            new_prediction = predict(new_imgs, labels, len(predictions), 1)
+            for pred in new_prediction:
+                new_prediction = [predictions[pred[0]]]
+                self.click_tiles(new_prediction, cols)
+                new_predictions.append(new_prediction[0])
             predictions = new_predictions  
         
         return True
@@ -230,29 +241,33 @@ class RecaptchaSolver:
                 verify = {By.ID: ['recaptcha-verify-button']}
                 verify = self.find_recaptcha_element(verify)
                 verify.click()
+
+                try:
+                    error = {By.CLASS_NAME: ['rc-imageselect-error-select-more']}
+                    text = self.find_recaptcha_element(error, timeout=2).text
+                    if text == 'Please select all matching images.':
+                        new_recaptcha = {By.XPATH: ['//*[@id="recaptcha-reload-button"]']}
+                        new_recaptcha = self.find_recaptcha_element(new_recaptcha)
+                        new_recaptcha.click()
+                        print('Unable to solve. Skipping challenge.')
+                        sleep(2)
+                        continue
+                except ElementNotFoundException:
+                    pass  
+
             else: #if not able to solve
                 new_recaptcha = {By.XPATH: ['//*[@id="recaptcha-reload-button"]']}
                 new_recaptcha = self.find_recaptcha_element(new_recaptcha)
                 new_recaptcha.click()
 
-            sleep(2)
-            try:
-                error = {By.CLASS_NAME: ['rc-imageselect-error-select-more']}
-                self.find_recaptcha_element(error, timeout=2)
-                new_recaptcha = {By.XPATH: ['//*[@id="recaptcha-reload-button"]']}
-                new_recaptcha = self.find_recaptcha_element(new_recaptcha)
-                new_recaptcha.click()
-                sleep(2)
-                continue
-            except ElementNotFoundException:
-                pass   
+            sleep(2) 
 
             self.switch_to_recaptcha_iframe()
             status = self.driver.find_element_by_xpath('//*[@id="recaptcha-anchor"]').get_attribute('aria-checked')
             done = True if status == 'true' else False
         print(time() - time_in)
 
-rs = RecaptchaSolver('https://www.google.com/recaptcha/api2/demo')
+rs = RecaptchaSolver('https://patrickhlauke.github.io/recaptcha/')
 rs.connect()
 rs.start_challenge()
 rs.solve_recaptcha()
