@@ -86,9 +86,9 @@ def run_inference_for_single_image(image, graph):
 
 def calculate_tiles(predictions, x_min, y_min, x_max, y_max, width, height, overlap):
     start_row = int(y_min / height) if overlap else int((y_min + y_max) / (2 * height))
-    end_row = int(y_max / height) if overlap else int((y_min + y_max) / (2 * height))
+    end_row = int((y_max - 1) / height) if overlap else int((y_min + y_max) / (2 * height))
     start_col = int(x_min / width) if overlap else int((x_min + x_max) / (2 * width))
-    end_col = int(x_max / width) if overlap else int((x_min + x_max) / (2 * width))
+    end_col = int((x_max - 1) / width) if overlap else int((x_min + x_max) / (2 * width))
 
     for row in range(start_row, end_row + 1):
         for col in range(start_col, end_col + 1):   

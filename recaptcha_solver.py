@@ -1,6 +1,7 @@
 import io
 import numpy as np
 import os
+import random
 import re
 import requests
 
@@ -13,6 +14,8 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 from time import sleep, time
+
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' # Suppress TensorFlow Output
 
 RECAPTCHA_URL = 'https://www.google.com/recaptcha/api2/anchor'
 
@@ -138,14 +141,22 @@ class RecaptchaSolver:
             # Convert image to numpy array
             images_arr = np.array(recaptcha_images)                   
             return (images_arr, rows, cols)
+
+    def download_to_disk(self, images, labels):
+        image = Image.fromarray(images.astype('uint8'))
+        label = labels[0]
+        path = "./" + label
+        if not os.path.exists(path):
+            os.makedirs(path)
+        image.save(path + '/' + str(time()) + '.jpg')
     
     def click_tiles(self, predictions, cols):
         for pred in predictions:
             index = pred[0] * cols + pred[1]
             self.driver.find_elements_by_tag_name('td')[index].click()
-            sleep(0.5)
+            sleep(random.random())
     
-    def solve_challenge(self, images, task, rows, cols):
+    def solve_challenge(self, images, task, rows, cols, save_images):
         task_type = -1
         labels = None # Class labels to find for recaptcha challenge
         for idx, val in enumerate(RECAPTCHA_RE):
@@ -156,14 +167,16 @@ class RecaptchaSolver:
                 break
                
         if task_type == 0:
-            return self.solve_dynamic_images_challenge(images, labels, rows, cols)
+            return self.solve_dynamic_images_challenge(images, labels, rows, cols, save_images)
         elif task_type == 1 or task_type == 2 or task_type == 3:
-            return self.solve_static_images_challenge(images, labels, rows, cols)
+            return self.solve_static_images_challenge(images, labels, rows, cols, save_images)
         else:
             print('Unable to recognize challenge')
             return False
     
-    def solve_static_images_challenge(self, images, labels, rows, cols):
+    def solve_static_images_challenge(self, images, labels, rows, cols, save_images):
+        if save_images:
+            self.download_to_disk(images, labels)
         predictions = predict(images, labels, rows, cols)
         self.click_tiles(predictions, cols)
         return predictions == []
@@ -178,7 +191,9 @@ class RecaptchaSolver:
             new_imgs[idx*dims[0] : (idx+1)*dims[0]] = new_img
         return new_imgs
     
-    def solve_dynamic_images_challenge(self, images, labels, rows, cols):
+    def solve_dynamic_images_challenge(self, images, labels, rows, cols, save_images):
+        if save_images:
+            self.download_to_disk(images, labels)
         predictions = predict(images, labels, rows, cols)
         if predictions:
             self.click_tiles(predictions, cols)
@@ -194,6 +209,10 @@ class RecaptchaSolver:
             width = int(images.shape[1] / cols)
             dims = (height, width, images.shape[2])
             new_imgs = self.download_dynamic_images(predictions, dims, cols)
+            
+            if save_images:
+                self.download_to_disk(new_imgs, labels)
+
             new_prediction = predict(new_imgs, labels, len(predictions), 1)
             for pred in new_prediction:
                 new_prediction = [predictions[pred[0]]]
@@ -204,13 +223,15 @@ class RecaptchaSolver:
         return True
                       
     
-    def solve_recaptcha(self):
+    def solve_recaptcha(self, save_images):
         """
         Solves recaptcha
 
         Raises:
             AccessDeniedException: If recaptcha detection system denies access 
-        """         
+        """  
+        self.connect()
+        self.start_challenge()     
         # Check to see presence of recaptcha denial message
         try:
             dos = {By.CLASS_NAME: ['rc-doscaptcha-header-text']}
@@ -221,7 +242,6 @@ class RecaptchaSolver:
             # Message not found. Proceed to solving recaptcha
             pass
 
-        time_in = time()
         done = False
         while not done:          
             task = {By.CLASS_NAME: ['rc-imageselect-desc-no-canonical', 'rc-imageselect-desc']}
@@ -235,9 +255,9 @@ class RecaptchaSolver:
                 if recaptcha_re:
                     labels = recaptcha_re.groups()
                     break
-            imgs, rows, cols = self.download_images(0)                   
-            
-            if self.solve_challenge(imgs, task, rows, cols): # if able to solve              
+            imgs, rows, cols = self.download_images(0)  
+
+            if self.solve_challenge(imgs, task, rows, cols, save_images): # if able to solve              
                 verify = {By.ID: ['recaptcha-verify-button']}
                 verify = self.find_recaptcha_element(verify)
                 verify.click()
@@ -245,7 +265,7 @@ class RecaptchaSolver:
                 try:
                     error = {By.CLASS_NAME: ['rc-imageselect-error-select-more']}
                     text = self.find_recaptcha_element(error, timeout=2).text
-                    if text == 'Please select all matching images.':
+                    if text == 'Please select all matching images.' or text == 'Please also check the new images.':
                         new_recaptcha = {By.XPATH: ['//*[@id="recaptcha-reload-button"]']}
                         new_recaptcha = self.find_recaptcha_element(new_recaptcha)
                         new_recaptcha.click()
@@ -265,9 +285,3 @@ class RecaptchaSolver:
             self.switch_to_recaptcha_iframe()
             status = self.driver.find_element_by_xpath('//*[@id="recaptcha-anchor"]').get_attribute('aria-checked')
             done = True if status == 'true' else False
-        print(time() - time_in)
-
-rs = RecaptchaSolver('https://patrickhlauke.github.io/recaptcha/')
-rs.connect()
-rs.start_challenge()
-rs.solve_recaptcha()

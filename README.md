@@ -1,2 +1,2 @@
 # RecaptchaSolver
-Solves Google's reCAPTCHA v2
+Uses Selenium and TensorFlow's Object Detection API to solve reCAPTCHA v2 Image Challenges
