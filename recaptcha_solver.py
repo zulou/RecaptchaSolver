@@ -247,6 +247,7 @@ class RecaptchaSolver:
             task = {By.CLASS_NAME: ['rc-imageselect-desc-no-canonical', 'rc-imageselect-desc']}
             # Recaptcha challenge to solve
             task = self.find_recaptcha_element(task).text
+            print()
             print(task, '======================================', sep='\n')
 
             labels = None

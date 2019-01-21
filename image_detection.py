@@ -1,5 +1,7 @@
 import numpy as np
 import os
+import six.moves.urllib as urllib
+import tarfile
 import tensorflow as tf
 
 from object_detection.utils import label_map_util
@@ -7,11 +9,15 @@ from object_detection.utils import ops as utils_ops
 from object_detection.utils import visualization_utils as vis_util
 from PIL import Image
 
-MODEL_NAME = 'faster_rcnn_resnet50'
+""" Download and load model and inference code borrowed from API's Jupyter notebook"""
+
+MODEL_NAME = 'faster_rcnn_resnet50_coco_2018_01_28'
+MODEL_FILE = MODEL_NAME + '.tar.gz'
+DOWNLOAD_BASE = 'http://download.tensorflow.org/models/object_detection/'
 OBJECT_DETECTION_PATH = 'object_detection'
 
 # Path to the frozen detection graph used for object detection.
-PATH_TO_FROZEN_GRAPH = OBJECT_DETECTION_PATH + '/' + MODEL_NAME + '/frozen_inference_graph.pb'
+PATH_TO_FROZEN_GRAPH = MODEL_NAME + '/frozen_inference_graph.pb'
 
 # Path to the class labels mapping file.
 PATH_TO_LABELS = os.path.join(OBJECT_DETECTION_PATH, 'data', 'mscoco_label_map.pbtxt')
@@ -30,13 +36,24 @@ label_map = label_map_util.load_labelmap(PATH_TO_LABELS)
 categories = label_map_util.convert_label_map_to_categories(label_map, max_num_classes=NUM_CLASSES, use_display_name=True)
 category_index = label_map_util.create_category_index(categories)
 
+# Download Model
+if not os.path.exists(PATH_TO_FROZEN_GRAPH):
+    print('Downloading RCNN model')
+    opener = urllib.request.URLopener()
+    opener.retrieve(DOWNLOAD_BASE + MODEL_FILE, MODEL_FILE)
+    tar_file = tarfile.open(MODEL_FILE)
+    for file in tar_file.getmembers():
+        file_name = os.path.basename(file.name)
+        if 'frozen_inference_graph.pb' in file_name:
+            tar_file.extract(file, os.getcwd())
+
 detection_graph = tf.Graph()
 with detection_graph.as_default():
-  od_graph_def = tf.GraphDef()
-  with tf.gfile.GFile(PATH_TO_FROZEN_GRAPH, 'rb') as fid:
-    serialized_graph = fid.read()
-    od_graph_def.ParseFromString(serialized_graph)
-    tf.import_graph_def(od_graph_def, name='')
+    od_graph_def = tf.GraphDef()
+    with tf.gfile.GFile(PATH_TO_FROZEN_GRAPH, 'rb') as fid:
+        serialized_graph = fid.read()
+        od_graph_def.ParseFromString(serialized_graph)
+        tf.import_graph_def(od_graph_def, name='')
 
 def run_inference_for_single_image(image, graph):
   with graph.as_default():

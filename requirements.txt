@@ -44,7 +44,7 @@ mistune==0.8.3
 nbconvert==5.3.1
 nbformat==4.4.0
 nltk==3.3
-notebook==5.6.0
+notebook==5.7.2
 numpy==1.14.5
 -e git+https://github.com/tensorflow/models@308179f3997d498922404ed90f6e029adf808667#egg=object_detection&subdirectory=research
 pandocfilters==1.4.2
@@ -61,10 +61,10 @@ pyparsing==2.2.0
 python-dateutil==2.7.3
 pytz==2018.5
 pywinpty==0.5.4
-PyYAML==3.13
+PyYAML==4.2b1
 pyzmq==17.1.0
 qtconsole==4.3.1
-requests==2.19.1
+requests==2.20.0
 scipy==1.1.0
 selenium==3.13.0
 Send2Trash==1.5.0
